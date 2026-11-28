@@ -3,6 +3,7 @@
 #include "../util/la.h"
 #include <X11/Xlib.h>
 #include "math.h"
+#include <stdio.h>
 
 const float FL_DELTA_RADIUS_DECELERATION_C = FL_DELTA_RADIUS_DECELERATION;
 

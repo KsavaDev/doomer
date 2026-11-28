@@ -1,3 +1,4 @@
+# features
 - [x] Change README.md
 - [x] Move X11 code to backend/X11_backend.c
   - [x] Fix segfault error that appears right before closing app.
@@ -8,3 +9,26 @@
   - [ ] Figure out best abstraction for getting data from copied image
     - [ ] Research format data that outputs from wayland
     - [ ] What do they have in common between X11 and Wayland?
+
+# fixes
+- [x] Fix zero xkey state and figure out why XNextEvent produces zero.
+	- [x] Read XNextEvent code and figure out how it works
+		- [x] XNextEvent takes pointer to display and pointer to event
+			- [x] What is 'register' keyword? Is storage class specifier that marks variable as stored in GPU registery.
+		- [x] This function locks display, frees event cookies and getting event from so-called _XQEvent
+			- [x] What is _XQEvent? Is basically quered events.
+		- [x] After that this function do something under '_XDeq', stores event and unlock display.
+		- [x] XNextEvent always returns 0
+			- [x] So state is always 0.
+			 - [x] DEADEND
+
+- [x] Figure out why zooming dont work properly (Zoom actually happens but doesnt affects at the image size or at camera zoom in real time).
+	- [x] Possible problem points:
+		- [x] Shader doesnt work
+			- [x] All shaders is okey
+		- [x] Maybe problem with XApp and image state doesnt updates in real time
+			- [x] Copying all initialization from XApp_init to main the problem fixes up.
+				- [x] Maybe I need updating XApp state so I can normally zoom in/out
+					- [x] I completely forgot about rate and screen...
+	  - [x] or anything other things
+			- [x] No. Not yet.

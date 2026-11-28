@@ -2,10 +2,12 @@
 #include "X11_backend.h"
 #include "X11_screenshot.h"
 
-GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X11_screenshot);
+GL_Backend *XApp_gl_init(int w, int h, Display *display, Window window, XVisualInfo *visual_info, Shader *vert, Shader *frag, X11_screenshot *X11_screenshot);
+void XApp_log(char *name);
 
 XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool windowed)
 {
+	printf("[XApp]: Initializing XApp.\n");
   XApp *app = calloc(1, sizeof(XApp));
   if (app == NULL)
   {
@@ -13,8 +15,7 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
     exit(1);
   }
 
-
-  Display *display = XOpenDisplay(NULL);
+	Display *display = XOpenDisplay(NULL);
   if (display == NULL)
   {
     fprintf(stderr, "Failed to open display.\n");
@@ -27,7 +28,7 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
   // TODO: implement switching tracking_window by select.
   Window tracking_window = DefaultRootWindow(display);
 
-  XRRScreenConfiguration *screen_config = XRRGetScreenInfo(display, root_window);
+  XRRScreenConfiguration *screen_config = XRRGetScreenInfo(display, DefaultRootWindow(display));
 
   short rate = XRRConfigCurrentRate(screen_config);
 
@@ -72,7 +73,7 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
   printf("Initializing XSetWindowAttributes.\n");
   XSetWindowAttributes *set_window_attributes = malloc(sizeof(XSetWindowAttributes));
 
-  set_window_attributes->colormap = XCreateColormap(display, root_window, visual_info->visual, AllocNone);
+  set_window_attributes->colormap = XCreateColormap(display, DefaultRootWindow(display), visual_info->visual, AllocNone);
 
   set_window_attributes->event_mask = event_mask;
 
@@ -83,7 +84,7 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
   }
 
   printf("Initializing XWindowAttributes.\n");
-  XWindowAttributes *window_attributes = malloc(sizeof(XWindowAttributes));
+  XWindowAttributes *window_attributes = calloc(1, sizeof(XWindowAttributes));
   XGetWindowAttributes(display, DefaultRootWindow(display), window_attributes);
 
   printf("Creating Window.\n");
@@ -113,21 +114,15 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
   printf("Setting WM protocols.\n");
   XSetWMProtocols(display, window, &delete_message, 1);
 
-  printf("Creating GLX Context.\n");
-  GLXContext context = glXCreateContext(display, visual_info, NULL, GL_TRUE);
-  glXMakeCurrent(display, window, context);
 
   printf("Reading shader files.\n");
   Shader *vertex_shader = shader_read("src/shaders/vert.glsl");
   Shader *fragment_shader = shader_read("src/shaders/frag.glsl");
   printf("Done reading shader files.\n");
 
-  printf("Creating new shader_program.\n");
-  GLuint shader_program = shader_new_program(vertex_shader, fragment_shader);
-
   int w = X11_screenshot->image->width;
   int h = X11_screenshot->image->height;
-
+	
   app->config = config;
   app->vert = vertex_shader;
   app->frag = fragment_shader;
@@ -136,22 +131,30 @@ XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool
   app->window = window;
   app->tracking_window = tracking_window;
   app->screenshot = X11_screenshot;
-  app->gl_backend = XApp_gl_init(w, h, shader_program, X11_screenshot);
-  app->delete_message = &delete_message;
+  app->delete_message = delete_message;
   app->width = w;
   app->height = h;
+	app->rate = rate;
+	app->screen = screen;
 
-  // If I remember correctly all other uninitalized fields will be automaticaly initializing to NULL
+  app->gl_backend = XApp_gl_init(w, h, display, app->window, visual_info, app->vert, app->frag, app->screenshot);
 
   return app;
 }
 
-GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X11_screenshot)
+GL_Backend *XApp_gl_init(int w, int h, Display *display, Window window, XVisualInfo *visual_info, Shader *vertex_shader, Shader *fragment_shader, X11_screenshot *X11_screenshot)
 {
   GL_Backend *gl_backend = calloc(1, sizeof(GL_Backend));
 
+  printf("Creating GLX Context.\n");
+	GLXContext context = glXCreateContext(display, visual_info, NULL, GL_TRUE);
+  glXMakeCurrent(display, window, context);
+
+  printf("Creating new shader_program.\n");
+  GLuint shader_program = shader_new_program(vertex_shader, fragment_shader);
+
   printf("Creating vao, vbo, ebo.\n");
-  GLuint *vao = malloc(sizeof(GLuint)), *vbo = malloc(sizeof(GLuint)), *ebo = malloc(sizeof(GLuint));
+  GLuint vao, vbo, ebo;
 
   printf("Creating vertices_foo.\n");
   GLfloat vertices_foo[4][5] = 
@@ -169,43 +172,27 @@ GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X1
     1, 2, 3
   };
 
-  printf("================ OpenGL ================\n");
-  printf("Gen vertex arrays.\n");
-  glGenVertexArrays(1, vao);
-  printf("Gen vbo buffers.\n");
-  glGenBuffers(1, vbo);
-  printf("Gen ebo buffers.\n");
-  glGenBuffers(1, ebo);
+  glGenVertexArrays(1, &vao);
+  glGenBuffers(1, &vbo);
+  glGenBuffers(1, &ebo);
 
-  printf("Binding vao.\n");
-  glBindVertexArray(*vao);
+  glBindVertexArray(vao);
 
-  printf("Binding array buffer vbo.\n");
-  glBindBuffer(GL_ARRAY_BUFFER, *vbo);
-  printf("Binding buffer data vertices_foo.\n");
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices_foo), vertices_foo, GL_STATIC_DRAW);
 
-  printf("Binding array buffer ebo.\n");
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, *ebo);
-  printf("Binding buffer data indices.\n");
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-  printf("Creating stride.\n");
   GLsizei stride = (GLsizei)(5 * sizeof(GLfloat));
 
   GLint aPos_location = glGetAttribLocation(shader_program, "aPos");
-  printf("aPos_location: %d\n", aPos_location);
   GLint aTexCoord_location = glGetAttribLocation(shader_program, "aTexCoord");
-  printf("aTexCoord_location: %d\n", aTexCoord_location);
 
-  printf("Vertex attrib pointer (0).\n");
   glVertexAttribPointer(aPos_location, 2, GL_FLOAT, false, stride, (pointer)(0));
-  printf("Enable vertex attrib pointer (0).\n");
   glEnableVertexAttribArray(aPos_location);
 
-  printf("Vertex attrib pointer (1).\n");
   glVertexAttribPointer(aTexCoord_location, 2, GL_FLOAT, false, stride, (pointer)(3 * sizeof(GLfloat)));
-  printf("Enable vertex attrib pointer (1).\n");
   glEnableVertexAttribArray(aTexCoord_location);
 
   GLuint texture = (GLuint)0;
@@ -220,7 +207,6 @@ GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X1
 
   glGenerateMipmap(GL_TEXTURE_2D);
 
-
   glEnable(GL_TEXTURE_2D);
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -228,10 +214,10 @@ GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X1
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-  gl_backend->vao = *vao;
-  gl_backend->vbo = *vbo;
-  gl_backend->ebo = *ebo;
-  gl_backend->texture = texture;
+  gl_backend->vao            = vao;
+  gl_backend->vbo            = vbo;
+  gl_backend->ebo            = ebo;
+  gl_backend->texture        = texture;
 	gl_backend->shader_program = shader_program;
 
   return gl_backend;
@@ -249,16 +235,14 @@ void XApp_destroy(XApp *app)
   free(app->vert);
   free(app->frag);
   X11_screenshot_destroy(app->screenshot, app->display);
-  XDestroyWindow(app->display, app->window);
-  XDestroyWindow(app->display, app->tracking_window);
-  XDestroyWindow(app->display, app->root_window);
-  XCloseDisplay(app->display);
 	gl_delete_buffers(app->gl_backend);
+  XDestroyWindow(app->display, app->window);
+  XCloseDisplay(app->display);
   free((void *)app);
 }
 
 
-void XApp_draw(XImage *image, Camera camera, Mouse mouse, Flashlight flashlight, GLuint shader_program, GLuint vao, GLuint texture, vec2f window_size, bool mirror)
+void XApp_draw(XImage image, Camera camera, Mouse mouse, Flashlight flashlight, GLuint shader_program, GLuint vao, GLuint texture, vec2f window_size, bool mirror)
 {
   glClearColor(0.1, 0.1, 0.1, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -286,7 +270,7 @@ void XApp_draw(XImage *image, Camera camera, Mouse mouse, Flashlight flashlight,
   glUniform1i(glGetUniformLocation(shader_program, "tex"), 0);
   glUniform2f(glGetUniformLocation(shader_program, "cameraPos"), camera.position.x, camera.position.y);
   glUniform1f(glGetUniformLocation(shader_program, "cameraScale"), camera.scale);
-  glUniform2f(glGetUniformLocation(shader_program, "X11_screenshotSize"), image->width, image->height);
+  glUniform2f(glGetUniformLocation(shader_program, "X11_screenshotSize"), image.width, image.height);
   glUniform2f(glGetUniformLocation(shader_program, "windowSize"), window_size.x, window_size.y);
   glUniform2f(glGetUniformLocation(shader_program, "cursorPos"), mouse.curr.x, mouse.curr.y);
   glUniform1f(glGetUniformLocation(shader_program, "flShadow"), flashlight.shadow);
@@ -313,20 +297,13 @@ int XApp_error_handler(Display *display, XErrorEvent *error_event)
 vec2f get_cursor_position(Display *display)
 {
   Window *root = malloc(sizeof(Window)), *child = malloc(sizeof(Window));
-  int *root_x = malloc(sizeof(int)), *root_y = malloc(sizeof(int)), *win_x = malloc(sizeof(int)), *win_y = malloc(sizeof(int));
-  unsigned int *mask = malloc(sizeof(unsigned int));
+  int root_x, root_y, win_x, win_y;
+  unsigned int mask;
 
   XQueryPointer(display, DefaultRootWindow(display), 
-                root, child, root_x, root_y, win_x, win_y, mask);
+                root, child, &root_x, &root_y, &win_x, &win_y, &mask);
 
-  free(root);
-  free(child);
-  free(root_x);
-  free(root_y);
-  free(win_x);
-  free(win_y);
-  free(mask);
-  return vec2((float)*root_x, (float)*root_y);
+  return vec2((float)root_x, (float)root_y);
 }
 
 Window select_window(Display *display)
@@ -359,4 +336,10 @@ Window select_window(Display *display)
   }
 
   return root;
+}
+
+// omg variadic arguments in C is so annoying...
+// TODO: implement A NORMAL log function with variadic arguments
+void XApp_log(char *name)
+{
 }

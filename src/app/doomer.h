@@ -6,7 +6,16 @@
 #include "../util/la.h"
 #include "navigation.h"
 
-void scroll_up(unsigned int state, long control_mask, Flashlight *flashlight, Camera *camera, Config config, Mouse mouse);
-void scroll_down(unsigned int state, long control_mask, Flashlight *flashlight, Camera *camera, Config config, Mouse mouse);
+typedef enum _WM
+{
+	X11,
+	WAYLAND,
+	DE,
+} WM;
+
+void zoom_in(unsigned int state, long control_mask, Flashlight *flashlight, Camera *camera, Config config, Mouse mouse);
+void zoom_out(unsigned int state, long control_mask, Flashlight *flashlight, Camera *camera, Config config, Mouse mouse);
+
+WM get_WM();
 
 #endif // DOOMER_H

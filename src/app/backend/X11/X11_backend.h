@@ -4,6 +4,7 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+#include <X11/Xlibint.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/Xrandr.h>
@@ -16,6 +17,8 @@
 #include "X11_screenshot.h"
 
 /*********************** MAIN ************************/
+
+typedef unsigned long ID;
 
 typedef struct GL_Backend
 {
@@ -39,25 +42,28 @@ typedef struct XApp
   Window          tracking_window; 
   X11_screenshot *screenshot;
   GL_Backend     *gl_backend;
-  Atom           *delete_message;
+  Atom            delete_message;
 
   int screen;
   int width, height;
   short rate;
 
   struct XApp*       (*init)         (Config*, char*, char*, long, bool);
-  struct GL_Backend* (*gl_init)      (int, int, GLuint, X11_screenshot*);
+  struct GL_Backend* (*gl_init)      (int, int, Display*, Window, XVisualInfo*, Shader*, Shader*, X11_screenshot*);
   void               (*destroy)      (struct XApp*);
   
-  void               (*draw)         (XImage*, Camera, Mouse, Flashlight, GLuint, GLuint, GLuint, vec2f, bool);
+  void               (*draw)         (XImage, Camera, Mouse, Flashlight, GLuint, GLuint, GLuint, vec2f, bool);
   int                (*error_handler)(Display*, XErrorEvent*);
+
+	//void							 (*log)					 (char*);
 } XApp;
 
 XApp       *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool windowed);
-GL_Backend *XApp_gl_init(int w, int h, GLuint shader_program, X11_screenshot *X11_screenshot);
+GL_Backend *XApp_gl_init(int w, int h, Display *display, Window window, XVisualInfo *visual_info, Shader *vert, Shader *frag, X11_screenshot *X11_screenshot);
 void        XApp_destroy(XApp* app);
-void        XApp_draw(XImage *image, Camera camera, Mouse mouse, Flashlight flashlight, GLuint shader_program, GLuint vao, GLuint texture, vec2f window_size, bool mirror);
+void        XApp_draw(XImage image, Camera camera, Mouse mouse, Flashlight flashlight, GLuint shader_program, GLuint vao, GLuint texture, vec2f window_size, bool mirror);
 int         XApp_error_handler(Display *display, XErrorEvent *error_event);
+//void XApp_log(char *name);
 
 /*********************** UTILITIES ************************/
 

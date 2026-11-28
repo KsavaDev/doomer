@@ -56,21 +56,30 @@ int main(void)
 
   XApp *app = XApp_init(&def_conf, "doomer", "doomer", event_mask, windowed);
 
-  app->init                       = XApp_init;
-  app->gl_init                    = XApp_gl_init;
-  app->draw                       = XApp_draw;
-  app->error_handler              = XApp_error_handler;
-  app->destroy                    = XApp_destroy;
+  app->gl_init       = XApp_gl_init;
+  app->init          = XApp_init;
+  app->draw          = XApp_draw;
+  app->error_handler = XApp_error_handler;
+  app->destroy       = XApp_destroy;
 
 	app->gl_backend->delete_buffers = gl_delete_buffers;
 
+	Display *display           = app->display;
+	Window window              = app->window;
+	short rate                 = app->rate;
+	X11_screenshot *screenshot = app->screenshot;
+	Atom delete_message       = app->delete_message;
+
+	GLuint vao            = app->gl_backend->vao;
+	GLuint vbo            = app->gl_backend->vbo;
+	GLuint texture        = app->gl_backend->texture;
+	GLuint shader_program = app->gl_backend->shader_program;
+
   bool quitting = false;
 
-  printf("Creating camera.\n");
   Camera *camera = calloc(1, sizeof(Camera));
   camera->scale = 1.0;
-  printf("getting cursor position.\n");
-  vec2f pos = get_cursor_position(app->display);
+  vec2f pos = get_cursor_position(display);
 
   Mouse *mouse = calloc(1, sizeof(Mouse));
   mouse->curr = pos;
@@ -80,38 +89,31 @@ int main(void)
   flashlight->radius = 200.0;
   bool mirror = false;
 
-  float dt = 1.0 / app->rate;
+  float dt = 1.0 / rate;
   Window origin_window;
   int revert_to_return;
-  printf("XGetInputFocus.\n");
-  XGetInputFocus(app->display, &origin_window, &revert_to_return);
+  XGetInputFocus(display, &origin_window, &revert_to_return);
 
   while (!quitting)
   {
     if (!windowed)
     {
-      XSetInputFocus(app->display, app->window, RevertToParent, CurrentTime);
+      XSetInputFocus(display, window, RevertToParent, CurrentTime);
     }
 
     XWindowAttributes wa;
-    XGetWindowAttributes(app->display, app->window, &wa);
+    XGetWindowAttributes(display, window, &wa);
     glViewport(0, 0, wa.width, wa.height);
 
-		printf("camera state: pos: x: %d, y: %d\n", camera->position.x, camera->position.y);
     XEvent event;
-    while (XPending(app->display) > 0)
+    while (XPending(display) > 0)
     {
-      printf("XPending(display) = %d\n", XPending(app->display));
-      printf("Next event.\n");
-      XNextEvent(app->display, &event);
-			int state = event.xkey.state; // Why state is 0? Its not a app->display
+      XNextEvent(display, &event);
 
-      printf("Switching type.\n");
       switch(event.type)
       {
         case MotionNotify:
 				{
-          printf("case: MotionNotify.\n");
           mouse->curr = vec2(event.xmotion.x, event.xmotion.y);
 
           if (mouse->drag)
@@ -119,7 +121,7 @@ int main(void)
             vec2f delta = vec2f_sub(world(*camera, mouse->prev), world(*camera, mouse->curr));
             vec2f_add_assign(&camera->position, delta);
 
-            camera->velocity = vec2f_mul_scalar(delta, app->rate);
+            camera->velocity = vec2f_mul_scalar(delta, rate);
           }
 
           mouse->prev = mouse->curr;
@@ -127,8 +129,7 @@ int main(void)
 				}
         case ClientMessage:
 				{
-          printf("case: ClientMessage.\n");
-          if ((Atom)(event.xclient.data.l[0]) == *app->delete_message)
+          if ((Atom)(event.xclient.data.l[0]) == delete_message)
           {
             quitting = true;
           }
@@ -136,19 +137,20 @@ int main(void)
 				}
         case KeyPress:
         {
-          printf("case: KeyPress.\n");
           KeySym key = XLookupKeysym(&event.xkey, 0);
-          printf("Key is %lu\n", key);
 
           switch (key)
           {
 						case XK_equal:  
 						{
-							printf("event.xkey.state: %u\n", state);
-							scroll_up(state, ControlMask, flashlight, camera, def_conf, *mouse); 
+							zoom_in(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse); 
 							break;
 						}
-            case XK_minus: scroll_down(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse); break;
+            case XK_minus:
+						{
+							zoom_out(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse);
+							break;
+						}
             case XK_0:
 						{
               camera->scale = 1.0;
@@ -174,7 +176,6 @@ int main(void)
         }
         case ButtonPress:
 				{
-          printf("case: ButtonPress.\n");
           switch(event.xbutton.button)
           {
             case Button1:
@@ -184,14 +185,21 @@ int main(void)
               camera->velocity = vec2(0.0, 0.0);
               break;
 						}
-            case Button4: scroll_up(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse); break;
-            case Button5: scroll_down(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse); break;
+            case Button4: 
+						{
+							zoom_in(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse);
+							break;
+						}
+            case Button5: 
+						{
+							zoom_out(event.xkey.state, ControlMask, flashlight, camera, def_conf, *mouse);
+							break;
+						}
           }
           break;
 				}
         case ButtonRelease:
 				{
-          printf("case: ButtonRelease.\n");
           switch(event.xbutton.button)
           {
             case Button1:
@@ -206,24 +214,24 @@ int main(void)
     camera_update(camera, def_conf, dt, *mouse, vec2(wa.width, wa.height));
     flashlight_update(flashlight, dt);
 
-    XApp_draw(app->screenshot->image, 
+    XApp_draw(*screenshot->image, 
 							*camera, 
 							*mouse, 
 							*flashlight, 
-							app->gl_backend->shader_program, 
-							app->gl_backend->vao, 
-							app->gl_backend->texture, 
+							shader_program, 
+							vao, 
+							texture, 
 							vec2(wa.width, wa.height), 
 							mirror);
 
-    glXSwapBuffers(app->display, app->window);
+    glXSwapBuffers(display, window);
     glFinish();
 
 #ifdef LIVE
-    X11_screenshot_refresh(app->screenshot, app->display, app->tracking_window);
+    X11_screenshot_refresh(screenshot, display, app->tracking_window);
 
-    int w = app->screenshot->image->width;
-    int h = app->screenshot->image->height;
+    int w = screenshot->image->width;
+    int h = screenshot->image->height;
 
     GLfloat vertices[4][5] = 
     {
@@ -250,10 +258,9 @@ int main(void)
 
 
   printf("Freed allocated structures.\n");
-  XSetInputFocus(app->display, origin_window, RevertToParent, CurrentTime);
-  XSync(app->display, 0);
+  XSetInputFocus(display, origin_window, RevertToParent, CurrentTime);
+  XSync(display, 0);
 
-	//gl_delete_buffers(app->gl_backend);
 
   free(mouse);
   free(camera);

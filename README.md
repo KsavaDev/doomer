@@ -1,8 +1,5 @@
 This is a version of the boomer applcation, originally created by Tsoding, rewritten in C and made independent of Window System.
 
-> [!WARNING]
-> (26.11.26) At last commits this software is completely broked. And I try to fix it as soon as possible.
-
 # Dependecies
 
 - ~ (Will be changed in future)
