@@ -7,7 +7,6 @@ void XApp_log(char *name);
 
 XApp *XApp_init(Config *config, char *name, char *c_class, long event_mask, bool windowed)
 {
-	printf("[XApp]: Initializing XApp.\n");
   XApp *app = calloc(1, sizeof(XApp));
   if (app == NULL)
   {
